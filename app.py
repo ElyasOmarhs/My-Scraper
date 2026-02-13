@@ -5,15 +5,73 @@ import re
 from twikit import Client
 from datetime import datetime
 
-# --- د پاڼې تنظیمات ---
+# ==========================================
+# ۱. د پاڼې او ډیزاین تنظیمات (UI/UX)
+# ==========================================
 st.set_page_config(
-    page_title="د الیاس سکریپر - آنلاین نسخه",
-    page_icon="🐦",
+    page_title="سکریپر پرو - الیاس عمر",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- مرستندویه فنکشنونه ---
+# دلته موږ خپل ځانګړی ډیزاین (CSS) ورکوو
+st.markdown("""
+    <style>
+    /* د ټولې پاڼې فونټ او ښي اړخ ته کول */
+    .stApp {
+        direction: rtl;
+        text-align: right;
+    }
+    /* د بټنو سټایل - مټریال ډیزاین */
+    div.stButton > button:first-child {
+        background-color: #0083B8;
+        color: white;
+        border-radius: 12px;
+        padding: 10px 24px;
+        border: none;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #005f85;
+        box-shadow: 0 6px 8px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+    }
+    /* د انپټ بکسونو سټایل */
+    .stTextInput > div > div > input {
+        border-radius: 10px;
+        text-align: right;
+    }
+    /* د سایډ بار رنګ */
+    [data-testid="stSidebar"] {
+        background-color: #f0f2f6;
+    }
+    /* تیاره موډ لپاره اصلاحات */
+    @media (prefers-color-scheme: dark) {
+        [data-testid="stSidebar"] {
+            background-color: #1e1e1e;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# ۲. د سیشن (Session) تنظیمات (د معلوماتو ساتل)
+# ==========================================
+# ستاسو کوکیز دلته په ډیفالټ بڼه خوندي دي
+DEFAULT_CT0 = "2620c27ebc24a02176f8d9680beb65b99a2688b40808ffa9628a8f4bb6cc16129b56e7e3b881c7d69887b51ce9e14f735ae73372ca032cdcb9e9d938fddcaf5e7fc5fff2a9ad0ec06ce56482dc3def6f"
+DEFAULT_AUTH = "1de0ebceee7c99e2fd6af6c8e953fd341af3478c"
+
+if 'limit_count' not in st.session_state: st.session_state.limit_count = 50
+if 'search_type' not in st.session_state: st.session_state.search_type = "Latest"
+if 'sort_algo' not in st.session_state: st.session_state.sort_algo = "None"
+if 'ct0' not in st.session_state: st.session_state.ct0 = DEFAULT_CT0
+if 'auth' not in st.session_state: st.session_state.auth = DEFAULT_AUTH
+
+# ==========================================
+# ۳. منطقي فنکشنونه (Logic)
+# ==========================================
 def clean_tweet_content(text):
     text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'www\.\S+', '', text)
@@ -26,20 +84,20 @@ def extract_hashtags(text):
 
 async def scrape_process(queries, limit, ct0, auth_token, post_type, sort_mode):
     client = Client('en-US')
-    # کوکیز تنظیمول
-    client.set_cookies({"ct0": ct0, "auth_token": auth_token})
-    
-    all_results = []
-    seen_content_hashes = set()
-    global_count = 0
-    status_text = st.empty()
-    progress_bar = st.progress(0)
-
     try:
+        client.set_cookies({"ct0": ct0, "auth_token": auth_token})
+        
+        all_results = []
+        seen_content_hashes = set()
+        global_count = 0
+        
+        status_placeholder = st.empty()
+        bar = st.progress(0)
+
         for q_idx, query in enumerate(queries):
             if global_count >= limit: break
             
-            status_text.text(f"🔍 لټون روان دی: {query}...")
+            status_placeholder.info(f"🔍 لټون روان دی: {query}...")
             
             try:
                 tweets = await client.search_tweet(query, product=post_type, count=limit)
@@ -47,8 +105,7 @@ async def scrape_process(queries, limit, ct0, auth_token, post_type, sort_mode):
                 st.error(f"Error searching {query}: {e}")
                 continue
 
-            if not tweets:
-                continue
+            if not tweets: continue
 
             while tweets:
                 for tweet in tweets:
@@ -72,10 +129,7 @@ async def scrape_process(queries, limit, ct0, auth_token, post_type, sort_mode):
                         "Tags": ", ".join(tags)
                     }
                     all_results.append(post_obj)
-                    
-                    # پرمختګ ښودل
-                    progress = min(global_count / limit, 1.0)
-                    progress_bar.progress(progress)
+                    bar.progress(min(global_count / limit, 1.0))
 
                 if global_count >= limit: break
                 
@@ -90,65 +144,113 @@ async def scrape_process(queries, limit, ct0, auth_token, post_type, sort_mode):
         elif sort_mode == "Longest First":
             all_results.sort(key=lambda x: len(x["MyPost"]), reverse=True)
             
-        # شمېرې سمول
+        # بیا شمېرنه
         for idx, item in enumerate(all_results):
             item["PostNo"] = str(idx + 1)
             
-        status_text.text("✅ پروسه بشپړه شوه!")
-        progress_bar.progress(100)
+        status_placeholder.success("✅ پروسه بشپړه شوه!")
+        bar.progress(100)
         return all_results
 
     except Exception as e:
-        st.error(f"ستره تېروتنه: {e}")
+        st.error(f"تېروتنه: {e}")
         return []
 
-# --- د ویبپاڼې ډیزاین (GUI) ---
-st.title("🚀 د الیاس د سکریپ کولو آنلاین سیسټم")
-
-# سایډبار (کیڼ اړخ ته تنظیمات)
+# ==========================================
+# ۴. سایډ بار مینو (Navigation)
+# ==========================================
 with st.sidebar:
-    st.header("🔑 د کوکیز مدیریت")
-    ct0_val = st.text_input("CT0 کوډ:", value="", type="password")
-    auth_val = st.text_input("Auth Token:", value="", type="password")
+    st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=80)
+    st.title("د کنټرول پنل")
+    st.markdown("---")
+    
+    # د مینو ټاکل
+    selected = st.radio(
+        "برخې:",
+        ["📊 ډاشبورډ", "⚙️ تنظیمات", "🔐 اکاونټ/کوکیز"],
+        index=0
+    )
     
     st.markdown("---")
-    st.header("⚙️ تنظیمات")
-    search_type = st.selectbox("د پلټنې ډول", ["Latest", "Top"])
-    sort_algo = st.selectbox("ترتیب (Sort)", ["None", "Shortest First", "Longest First"])
-    limit_count = st.number_input("د پوسټونو تعداد", min_value=10, max_value=500, value=50)
+    st.caption("Developed by Elyas Omar")
 
-# اصلي برخه
-st.subheader("🔎 دلته خپل هشټاګونه ولیکئ")
-query_text = st.text_area("هر هشټاګ په نوې کرښه کې ولیکئ:", "#خلافت_یوازینی_انتخاب\n#افغانستان")
+# ==========================================
+# ۵. د پاڼو محتوا (Page Content)
+# ==========================================
 
-col1, col2 = st.columns([1, 2])
+# >>> لومړۍ پاڼه: ډاشبورډ <<<
+if selected == "📊 ډاشبورډ":
+    st.header("🚀 اصلي ډاشبورډ")
+    st.markdown("دلته خپل هشټاګونه ولیکئ او د پیل تڼۍ ووهئ.")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        query_text = st.text_area("هشټاګونه (په هر کرښه کې یو):", "#افغانستان\n#خلافت", height=150)
+    
+    with col2:
+        st.info(f"تعداد: {st.session_state.limit_count}")
+        st.info(f"ډول: {st.session_state.search_type}")
+        start_btn = st.button("پیل کړئ", use_container_width=True)
 
-with col1:
-    start_btn = st.button("پیل کړئ (Start Scraping)", type="primary")
-
-# کله چې بټن ووهل شي
-if start_btn:
-    if not ct0_val or not auth_val:
-        st.warning("مهرباني وکړئ لومړی CT0 او Auth Token دننه کړئ!")
-    else:
+    if start_btn:
         queries = [q.strip() for q in query_text.split('\n') if q.strip()]
-        
-        # د Async فنکشن چلول
-        results = asyncio.run(scrape_process(queries, limit_count, ct0_val, auth_val, search_type, sort_algo))
+        results = asyncio.run(scrape_process(
+            queries, 
+            st.session_state.limit_count, 
+            st.session_state.ct0, 
+            st.session_state.auth, 
+            st.session_state.search_type, 
+            st.session_state.sort_algo
+        ))
         
         if results:
-            st.success(f"مبارک! {len(results)} پوسټونه پیدا شول.")
+            st.subheader(f"📄 موندل شوي پایلې ({len(results)})")
+            st.dataframe(results, use_container_width=True)
             
-            # ډیټا ښودل
-            st.dataframe(results)
-            
-            # د ډاونلوډ بټن جوړول
             json_str = json.dumps(results, ensure_ascii=False, indent=4)
             st.download_button(
                 label="📥 فایل ډاونلوډ کړئ (JSON)",
                 data=json_str,
-                file_name="scraped_data.json",
+                file_name=f"data_{datetime.now().strftime('%Y%m%d')}.json",
                 mime="application/json"
             )
-        else:
-            st.warning("هیڅ معلومات ونه موندل شول یا تېروتنه رامنځته شوه.")
+
+# >>> دوهمه پاڼه: تنظیمات <<<
+elif selected == "⚙️ تنظیمات":
+    st.header("⚙️ د سکریپر تنظیمات")
+    st.markdown("دلته کولی شئ د لټون ډول او ترتیب بدل کړئ.")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.search_type = st.selectbox(
+            "د لټون ډول (Search Type)",
+            ["Latest (نوي)", "Top (مشهور)"],
+            index=0 if st.session_state.search_type == "Latest" else 1
+        )
+        
+        st.session_state.sort_algo = st.selectbox(
+            "د پایلو ترتیب (Sort)",
+            ["None (نارمل)", "Shortest First (لنډ اول)", "Longest First (اوږد اول)"],
+            index=0
+        )
+        
+    with c2:
+        st.session_state.limit_count = st.number_input(
+            "د پوسټونو نهایي حد (Limit)", 
+            min_value=10, max_value=1000, 
+            value=st.session_state.limit_count
+        )
+
+# >>> دریمه پاڼه: د اکاونټ معلومات <<<
+elif selected == "🔐 اکاونټ/کوکیز":
+    st.header("🔐 د ننوتلو معلومات")
+    st.warning("دا معلومات ستاسو شخصي دي. دلته خوندي دي.")
+    
+    with st.expander("د کوکیز لیدل/تغیرول", expanded=True):
+        st.session_state.ct0 = st.text_input("CT0 کوډ:", value=st.session_state.ct0, type="password")
+        st.session_state.auth = st.text_input("Auth Token:", value=st.session_state.auth, type="password")
+        
+        if st.button("ذخیره کول"):
+            st.success("معلومات تازه شول!")
+
